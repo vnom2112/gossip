@@ -100,6 +100,7 @@ app.get('/', function(req, res) {
 });
 
 app.get('/home', function(req,res) {
+  console.log("hit home");
   var data = {};
   data.userAuthenticated = req.isAuthenticated();
 	User.find(function(err, users) {
@@ -175,12 +176,25 @@ app.get('/logout', function(req,res) {
 
 app.get('/gossip/:userid', function(req, res) {
   console.log("gossip user= " + req.params.userid);
-  require('crontab').load(function(err, crontab) {
-    // create with string expression 
-    var job = crontab.create('touch', 'a_new_file.txt');
+  if(global.childProcess) {
+    global.childProcess.kill('SIGINT');
+    console.log('killed running process');
+  } else {
+    global.childProcess = require('child_process').spawn('python', ['script.py', req.params.userid]);
 
-    console.log(cronetab.jobs());
-  });
+    global.childProcess.stdout.on('data', function(data) {
+      console.log(data);
+    });
+
+    global.childProcess.stderr.on('data', function(data) {
+      console.log(data);
+    });
+
+    global.childProcess.on('close', function(code) {
+      console.log('closing code: ' + code);
+    });  
+  }
+  
   /*res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8'
   });*/
