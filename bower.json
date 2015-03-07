@@ -1,0 +1,21 @@
+{
+  "name": "cs462",
+  "version": "1.0.0",
+  "authors": [
+    "bkelley <bradyjkelley@gmail.com>"
+  ],
+  "description": "Foursquare OAuth/API Lab",
+  "license": "MIT",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "bootstrap": "~3.3.2",
+    "moment": "~2.9.0"
+  }
+}

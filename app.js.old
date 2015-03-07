@@ -1,0 +1,109 @@
+var express = require('express');
+var bodyParser = require('body-parser');
+var http = require('http');
+
+var config = {
+  'secrets' : {
+    'clientId' : 'SCXYLTTM5GFH1F1EVSB2PCNADL0CV50Q45ACIJ2F0Q43USCD',
+    'clientSecret' : 'MLTPJP1RE1TF0TYHOMOX3TU0BFLHDX23OUV4TZLXJIJWMEEE',
+    'redirectUrl' : 'http://localhost:3000/auth'
+  },
+  'foursquare' : {
+  	'version' : '20150202',
+  	'mode' : 'foursquare'
+  }
+}
+
+var foursquare = require('node-foursquare')(config);
+
+var app = express();
+app.use(bodyParser.json());
+app.set('views', __dirname + '/views');
+app.engine('html', require('ejs').renderFile);
+app.set('view engine', 'ejs');
+
+app.get('/home', function(req,res) {
+	res.render('home.html');
+});
+
+app.get('/login', function(req, res) {
+  res.writeHead(303, { 'location': foursquare.getAuthClientRedirectUrl() });
+  res.end();
+});
+
+app.get('/auth', function (req, response) {
+  foursquare.getAccessToken({
+    code: req.query.code
+  }, function (error, accessToken) {
+    if(error) {
+      response.send('An error was thrown: ' + error.message);
+    }
+    else {
+	    var options = {
+		  hostname: 'localhost',
+		  port: 3000,
+		  path: '/auth',
+		  method: 'POST',
+		  headers: { "Content-Type": "application/json" }
+		};
+
+		var req = http.request(options, function(res) {
+		  console.log('STATUS: ' + res.statusCode);
+		  console.log('HEADERS: ' + JSON.stringify(res.headers));
+		  res.setEncoding('utf8');
+		  response.writeHead(303, {"location": '/dashboard'});
+		  response.end();
+		});
+
+		req.on('error', function(e) {
+		  console.log('problem with request: ' + e.message);
+		});
+
+
+		var user = new User({
+				username:'brady',
+				token: accessToken
+			});
+		req.write(JSON.stringify(user) + '\n');
+		req.end();
+    }
+  });
+});
+
+var User = require('./model/user')
+app.post('/auth', function (req, res) {
+	console.log("Writing to db:" + req.body);
+	var user = new User(
+			{
+				username: req.body.username,
+				token: req.body.token
+			}
+	);
+	user.save(function (err, post) {
+    	if (err) { return next(err) }
+    	console.log("Saved user");
+    	res.status(201).json(user);
+  	});
+});
+
+app.get('/users', function(req, res) {
+	User.find(function(err, posts) {
+		if (err) { return next(err) }
+	   	res.json(posts)
+	});
+});
+
+app.get('/dashboard', function(req,response) {
+	foursquare.Users.getCheckins(null, accessToken, function(req, res) {
+		response.json(res.body);
+		response.end();
+	});
+	//res.render('dashboard.html');
+});
+
+app.listen(3000, function () {
+  console.log('Server listening on', 3000);
+});
+
+
+//Foursquare.Checkins.getRecentCheckins(null, accessToken, function (error, data))

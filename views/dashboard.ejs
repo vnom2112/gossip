@@ -1,0 +1,18 @@
+<html>
+<head>
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap-theme.min.css">
+	<script src="bower_components/moment/min/moment-with-locales.min.js" type="text/javascript"></script>
+</head>
+<body>
+	<% if(data.userAuthenticated) { %>
+		<a class="btn btn-md btn-danger" href="/logout">Log Out</a>
+	<% } %>
+	<a class="btn btn-md" href="/home">Home</a>
+	<%	var welcomeString = data.user.firstName + ' ' + data.user.lastName %>
+	<h1><%= welcomeString %></h1>
+	<h2>Location: <%= data.user.location %></h2>
+	<img src="<%= data.user.picturePrefix + '300x300' + data.user.pictureSuffix %>" class="img-rounded"/>
+	<script src="bower_components/jquery/dist/jquery.min.js" type="text/javascript"></script>
+	<script src="bower_components/bootstrap/dist/js/bootstrap.min.js" type="text/javascript"></script>
+</body>
