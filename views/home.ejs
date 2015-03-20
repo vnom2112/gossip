@@ -9,35 +9,18 @@
 	<div class="row">
 		<div class="col-md-4">&nbsp;</div>
 		<div class="col-md-4">
-			<div class="panel panel-primary">
+			<div class="panel panel-primary" style="margin-top: 30px">
 				<div class="panel-title text-center">
 					<h2>Brady's Gossip Protcol App</h2>
 				</div>
 				<div class="panel-body">
-					<% if(data.userAuthenticated) { %>
-					<div class="list-group">
-						<a href="/logout" class="list-group-item list-group-item-success text-center" ><h4>You're Logged In!</h4> 
-						<h6>Click to Log Out</h6></a>
+					<div class="input-group" style="margin-bottom: 15px">
+					  <span class="input-group-addon" id="basic-addon1">ID:</span>
+					  <input type="text" id="nodeIdInput" class="form-control" placeholder="Node ID" aria-describedby="basic-addon1">
 					</div>
-					<% } else { %>
-					<a href="/login" class="btn btn-primary btn-lg pagination-center center-block">
-					  <span class="glyphicon glyphicon-ok" aria-hidden="true"></span>  Log In With Foursquare
+					<a href="javascript:void(0)" id="createNodeButton" class="btn btn-primary btn-lg pagination-center center-block">
+					  <span class="glyphicon glyphicon-plus" aria-hidden="true"></span>  Create Node
 					</a>
-					<% } %>
-				</div>
-			</div>
-			<div class="well well-lg">
-				<h3><u>Recent Users</u></h3>
-				<div class="row">
-				<% data.users.forEach(function(el, index) { %>
-					<% var name = el.firstName + ' ' + el.lastName; %>
-					<div class="center-block" style="width: 125px; display: inline-block">
-						<div class="col">
-							<img src="<%=el.picturePrefix + '100x100' + el.pictureSuffix%>" class="img-rounded center-block"/>
-							<h4 class="text-center"><%= name %></h4>
-						</div>
-					</div>
-				<% }); %>
 				</div>
 			</div>
 		</div>
@@ -45,5 +28,15 @@
 	</div>
 	<script src="bower_components/jquery/dist/jquery.min.js" type="text/javascript"></script>
 	<script src="bower_components/bootstrap/dist/js/bootstrap.min.js" type="text/javascript"></script>
+	<script>
+		$(document).ready(function () {
+			$('#createNodeButton').on('click', function() {
+				var nodeID = $('#nodeIdInput').val();
+				if(nodeID != "") {
+					window.location.href = '/dashboard/' + nodeID;	
+				}
+			});
+		});
+	</script>
 </body>
 <html>

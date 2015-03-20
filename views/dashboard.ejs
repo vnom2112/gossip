@@ -1,18 +1,66 @@
 <html>
 <head>
-	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
-	<link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap-theme.min.css">
-	<script src="bower_components/moment/min/moment-with-locales.min.js" type="text/javascript"></script>
+	<link rel="stylesheet" type="text/css" href="/bower_components/bootstrap/dist/css/bootstrap.min.css">
+	<link rel="stylesheet" type="text/css" href="/bower_components/bootstrap/dist/css/bootstrap-theme.min.css">
+	<script src="/bower_components/moment/min/moment-with-locales.min.js" type="text/javascript"></script>
 </head>
 <body>
-	<% if(data.userAuthenticated) { %>
-		<a class="btn btn-md btn-danger" href="/logout">Log Out</a>
-	<% } %>
-	<a class="btn btn-md" href="/home">Home</a>
-	<%	var welcomeString = data.user.firstName + ' ' + data.user.lastName %>
-	<h1><%= welcomeString %></h1>
-	<h2>Location: <%= data.user.location %></h2>
-	<img src="<%= data.user.picturePrefix + '300x300' + data.user.pictureSuffix %>" class="img-rounded"/>
-	<script src="bower_components/jquery/dist/jquery.min.js" type="text/javascript"></script>
-	<script src="bower_components/bootstrap/dist/js/bootstrap.min.js" type="text/javascript"></script>
+	<h1>Node ID: <%= data.node.nodeID %></h1>
+	<% 	var statusText = "Stopped";
+		if(data.status == true) { 
+			statusText = "Running";
+		} 
+
+		var messages = "";
+		data.messages.forEach(function(el, index){
+			messages += el.text + '\n';
+		});
+
+	%>
+	<h3>Status: <%= statusText %></h3>
+	<a class="btn btn-md btn-success" href="/start/<%= data.node.nodeID %>">Start</a>
+	<a class="btn btn-md btn-danger" href="/stop/<%= data.node.nodeID %>">Stop</a>
+	<div class="form-group">
+  		<label for="comment"><%= data.node.nodeID%>'s Messages:</label>
+  		<textarea class="form-control" id="nodeMessages" rows="5" readonly><%= messages %></textarea>
+	</div>
+	<div class="input-group" style="margin-bottom: 15px">
+	  <span class="input-group-addon" id="basic-addon1">@</span>
+	  <input type="text" id="messageInput" class="form-control" placeholder="New Message" aria-describedby="basic-addon1">
+	</div>
+	<a href="javascript:void(0)" id="sendMessageButton" class="btn btn-primary btn-sm">
+	  <span class="glyphicon glyphicon-envelope" aria-hidden="true"></span>  Send
+	</a>
+	<div id="rumorGroup">
+	<label for="rumorGroup">Rumors:</label>
+		<div id="rumorItems">
+			<% data.rumors.forEach(function(el, index) { %>
+				<p class="bg-info" style="margin: 7px"><%= el.friendID + ': ' + el.text %></p>
+			<%	}) %>
+		</div>	
+	</div>
+	<script src="/bower_components/jquery/dist/jquery.min.js" type="text/javascript"></script>
+	<script src="/bower_components/bootstrap/dist/js/bootstrap.min.js" type="text/javascript"></script>
+	<script type="text/javascript">
+		$(document).ready(function () {
+			$('#sendMessageButton').on('click', function() {
+				var messageText = $('#messageInput').val();
+				if(messageText != "") {
+					$.post( "/message/new/<%= data.node.nodeID %>", { text: messageText } );
+					window.location.href = '/dashboard/<%= data.node.nodeID %>';
+				}
+			});
+
+			setInterval(function(){
+			   $.get('/rumors/all/<%= data.node.nodeID%>?orderType=none', function(data) {
+			   		console.log(JSON.stringify(data));
+			   		var rumorHTML = "";
+			   		data.forEach(function(item) {
+			   			rumorHTML += '<p class="bg-info" style="margin: 7px">' + item.friendID + ': ' + item.text + '</p>'
+			   		})
+			   		$('#rumorItems').html(rumorHTML);
+			   });
+			}, 5000);
+		});
+	</script>
 </body>

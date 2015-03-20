@@ -1,9 +1,9 @@
 var express = require('express');
 var bodyParser = require('body-parser');
 var http = require('http');
-var passport = require('passport');
+//var passport = require('passport');
 var util = require('util');
-var FoursquareStrategy = require('passport-foursquare').Strategy;
+//var FoursquareStrategy = require('passport-foursquare').Strategy;
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var methodOverride = require('method-override');
@@ -12,66 +12,8 @@ var serveStatic = require('serve-static');
 var request = require('request');
 var moment = require('moment');
 var uuid = require('node-uuid');
-
-var FOURSQUARE_CLIENT_ID = 'SCXYLTTM5GFH1F1EVSB2PCNADL0CV50Q45ACIJ2F0Q43USCD';
-var FOURSQUARE_CLIENT_SECRET = 'MLTPJP1RE1TF0TYHOMOX3TU0BFLHDX23OUV4TZLXJIJWMEEE';
-
-passport.serializeUser(function(user, done) {
-  done(null, user._json.response.user.contact.email);
-});
-
-passport.deserializeUser(function(obj, done) {
-  done(null, obj);
-});
-
-passport.use(new FoursquareStrategy({
-    clientID: FOURSQUARE_CLIENT_ID,
-    clientSecret: FOURSQUARE_CLIENT_SECRET,
-    callbackURL: "http://localhost:3000/auth"
-  },
-  function(accessToken, refreshToken, profile, done) {
-    // asynchronous verification, for effect...
-    process.nextTick(function () {
-      
-	    // To keep the example simple, the user's Foursquare profile is returned
-	    // to represent the logged-in user.  In a typical application, you would
-	    // want to associate the Foursquare account with a user record in your
-	    // database, and return that user instead.
-	    /*console.log("Writing to db:" + req.body);
-		var user = new User(
-				{
-					username: profile.username,
-					token: profile.token
-				}
-		);
-		user.save(function (err, post) {
-	    	if (err) { return next(err) }
-	    	console.log("Saved user");
-	    	res.status(201).json(user);
-	  	});*/
-    	console.log("authenticated! "); // + JSON.stringify(profile, undefined, 2));
-    	var userObject = profile._json.response.user;
-    	var user = new User({
-    		firstName: userObject.firstName,
-    		lastName: userObject.lastName,
-    		username: userObject.contact.email,
-    		picturePrefix: userObject.photo.prefix,
-    		pictureSuffix: userObject.photo.suffix,
-    		location: userObject.homeCity,
-    		lastLogIn: Date.now(),
-        token: accessToken,
-        uuid: uuid.v1()
-    	});
-    	var upsertUser = user.toObject();
-    	delete upsertUser._id;
-    	User.update({ username: profile._json.response.user.contact.email }, upsertUser, { upsert: true }, function(err, numberAffected, raw) {
-    		if (err) { console.log("Error saving/updating user") }
-	    	console.log("Saved user");
-    	});
-      	return done(null, profile);
-    });
-  }
-));
+var url_parser = require('url');
+var SERVER_IP = "54.152.227.132";
 
 var app = express();
 // configure Express
@@ -86,14 +28,16 @@ app.configure(function() {
   app.use(express.session({ secret: 'bradycs462' }));
   // Initialize Passport!  Also use passport.session() middleware, to support
   // persistent login sessions (recommended).
-  app.use(passport.initialize());
-  app.use(passport.session());
+  /*app.use(passport.initialize());
+  app.use(passport.session());*/
   app.use(app.router);
   app.use(express.static(__dirname + '/public'));
 });
 
-var User = require('./model/user');
-var CheckIn = require('./model/checkin');
+var Peer = require('./model/peer');
+var Rumor = require('./model/rumor');
+var Relation = require('./model/relation');
+var SentMessage = require('./model/sentMessage');
 
 app.get('/', function(req, res) {
   res.redirect('/home');
@@ -101,25 +45,13 @@ app.get('/', function(req, res) {
 
 app.get('/home', function(req,res) {
   console.log("hit home");
-  var data = {};
+  /*var data = {};
   data.userAuthenticated = req.isAuthenticated();
 	User.find(function(err, users) {
     data.users = users;
 		res.render('home', {data: data});	
-	});
-	
-});
-
-app.get('/login', 
-  passport.authenticate('foursquare'), 
-  function (req,res){
-  	console.log("shouldn't get here");
-});
-
-app.get('/auth', passport.authenticate('foursquare', { failureRedirect: '/home' }),
-  function(req, res) {
-  	//console.log("User: " + JSON.stringify(req.user, undefined, 2));
-    res.redirect('/dashboard?user=' + req.user._json.response.user.contact.email);
+	});*/
+	res.render('home');
 });
 
 app.get('/dashboard', function(req,response) {
@@ -169,62 +101,483 @@ app.get('/dashboard', function(req,response) {
 	
 });
 
-app.get('/logout', function(req,res) {
-	req.logout();
-	res.redirect('/home');
+app.get('/stop/:nodeID', function(req,res) {
+	//req.logout();
+  var nodeID = req.params.nodeID;
+  if(global.processes && global.processes[nodeID]) {
+    global.processes[nodeID].kill('SIGINT');
+    console.log('killed running process: ' + nodeID);
+    delete global.processes[nodeID];
+  }
+	res.redirect('/dashboard/' + nodeID);
 });
 
-app.get('/gossip/:userid', function(req, res) {
-  console.log("gossip user= " + req.params.userid);
-  if(global.childProcess) {
-    global.childProcess.kill('SIGINT');
-    console.log('killed running process');
-  } else {
-    global.childProcess = require('child_process').spawn('python', ['script.py', req.params.userid]);
+app.get('/dashboard/:nodeID', function(req, res) {
+  var nodeID = req.params.nodeID;
+  console.log("create/login node= " + nodeID);
 
-    global.childProcess.stdout.on('data', function(data) {
-      console.log(data);
-    });
+  Peer.find({nodeID: nodeID}, function(err, currentNode) {
 
-    global.childProcess.stderr.on('data', function(data) {
-      console.log(data);
-    });
+    if(!currentNode.length) {
+      Peer.find({}, function(err, allPeers) {
+        if(allPeers.length) {
+          var firstFriend = allPeers[0];
+          var newRelation1 = new Relation({nodeID: nodeID, friendID: firstFriend.nodeID});
+          //var newRelation2 = new Relation({nodeID: firstFriend.nodeID, friendID: nodeID});
+          newRelation1.save(function(err, relation1) {
+            //console.log("saved first friend #1");
+          });
+          Relation.update({nodeID: firstFriend.nodeID, friendID: nodeID}, 
+            {nodeID: firstFriend.nodeID, friendID: nodeID}, {upsert: true},function(err, relation2) {
+            //console.log("saved first friend #2");
+          });
+        }
+      });
+      var newPeer = new Peer({
+        nodeID: nodeID,
+        uuID: uuid.v1(),
+        url: "http://" + SERVER_IP + ":3000/gossip/" + nodeID
+      });
+      newPeer.save(function(err, newNode) {
+        //console.log("new peer saved: " + nodeID);
+        if(err) {
+          console.log('Could not save new node');
+          res.redirect('home');
+        } else {
+          gotoDashboard(req, res, newPeer);
+        }
+      });
+    } else {
+      gotoDashboard(req, res, currentNode[0]);
+    }
+  });  
+});
 
-    global.childProcess.on('close', function(code) {
-      console.log('closing code: ' + code);
+function gotoDashboard(req, res, node) {
+  Rumor.find({nodeID: node.nodeID, friendID: node.nodeID}, function(err, myMessages) {
+    if(!err) {
+      Rumor.find({nodeID: node.nodeID, friendID: {$ne: node.nodeID}}).sort('messageID orderID').exec(function(err, rumors){
+        if(!err) {
+          var status = false;
+          if(global.processes && global.processes[node.nodeID]) {
+            status = true;
+          }
+          var data = {
+            node: node,
+            messages: myMessages,
+            rumors: rumors,
+            status: status
+          }
+          res.render('dashboard', {data: data});
+        } else {
+          res.status(404).send('not found');
+        }
+      });
+    } else {
+      res.status(404).send('not found');
+    }
+  });
+}
+
+app.get('/start/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  if(global.processes === undefined) {
+    global.processes = {};
+  }
+
+  if(global.processes[nodeID] === undefined) {
+    Peer.find({nodeID: nodeID}, function(err, result) {
+      if(!result.length) {
+        res.status(404).send('node not found');
+      } else if(!global.processes[nodeID]) {
+        startNodeProcess(nodeID, result[0].uuID);
+        res.redirect('/dashboard/' + nodeID);
+      }
     });  
   }
-  
-  /*res.writeHead(200, {
-      'Content-Type': 'application/json; charset=utf-8'
-  });*/
-  
-  /*{"Rumor" : 
-    {"MessageID": "ABCD-1234-ABCD-1234-ABCD-1234:5" ,
-                "Originator": "Phil",
-                "Text": "Hello World!"
-                },
-    "EndPoint": "https://example.com/gossip/13244"
-  }*/
-  /*{"Want": {"ABCD-1234-ABCD-1234-ABCD-125A": 3,
-              "ABCD-1234-ABCD-1234-ABCD-129B": 5,
-              "ABCD-1234-ABCD-1234-ABCD-123C": 10
-             } ,
-     "EndPoint": "https://example.com/gossip/asff3"
-    }*/
-  //if rumor then store in database for that user
-  //else if want then get all messages that we have
-  // compare to messages from want and send back all messages they desire
-  res.end();
 });
+
+app.post('/gossip/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  //console.log("recieving gossip: " + nodeID + "\n" + JSON.stringify(req.body));
+  if(global.processes && global.processes[nodeID]) {
+    if(req.body.Rumor ) {
+      saveRumor(req, res, nodeID);
+    } else {
+      handleWant(req, res, nodeID);
+    }
+  } else{
+    res.status(404).send("Not Found");
+  }
+  
+});
+
+app.get('/peers/:nodeID', function(req, res) {
+  //console.log("getting peers");
+  var nodeID = req.params.nodeID;
+  Relation.find({nodeID: nodeID}, function(err, result){
+    var friendIDs = [];
+    if(result && result.length) {
+      result.forEach(function(value, index) {
+        friendIDs.push(value.friendID);
+      });
+      console.log(friendIDs);
+      Peer.find().where('nodeID').in(friendIDs).exec(function(err, peers) {
+        //console.log("found peers: " + peers);
+        res.writeHead(200, { 'Content-Type': 'application/json'});
+        res.write(JSON.stringify(peers, 0, 4));
+        res.end();
+      });
+    } else {
+      //console.log("empty peers list");
+      res.writeHead(200, { 'Content-Type': 'application/json'});
+      res.write(JSON.stringify([], 0, 4));
+      res.end();
+    }
+  });
+});
+
+app.get('/sent/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var friendID = req.query.friendID;
+  var messageID = req.query.messageID;
+  var options = {
+    nodeID: nodeID,
+    friendID: friendID
+  };
+  if(messageID !== undefined && messageID != "") {
+    options.messageID = messageID
+  }
+  SentMessage.find(options, function(err, result){
+    res.writeHead(200, { 'Content-Type': 'application/json'});
+    res.write(JSON.stringify(result, 0, 4));
+    res.end();
+  });
+});
+
+app.post('/sent/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var messageJson = req.body;
+  console.log("Updating sent: " + JSON.stringify(messageJson, 0, 4));
+  var friendID = req.query.friendID;
+  //var uuID = messageJson.messageID.split(":");
+  //console.log("Updating last sent message: " + nodeID + ", "
+  // + friendID + ", " + uuID[0] +  ", " + uuID[1]);
+  var sentMessage = {
+      nodeID: nodeID,
+      friendID: friendID,
+      messageID: messageJson.messageID,
+      lastOrderID: parseInt(messageJson.orderID)
+    };
+  SentMessage.update({nodeID: nodeID, friendID: friendID,
+      messageID: messageJson.messageID}, sentMessage, {upsert: true}, function(err, result){
+    if(err) {
+      console.log('Sent Message update failed: ' +  err.message);
+      res.status(500).send("Internal Server Error");
+    } else {
+      res.status(200).send("success");
+    }
+  }); 
+});
+
+app.get('/rumors/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var friendID = req.query.friendID;
+  Rumor.find({nodeID: nodeID, friendID: friendID}).sort('-orderID').exec(function(err, rumors){
+    console.log("Getting rumors: " + JSON.stringify(rumors, 0, 4));
+    res.writeHead(200, { 'Content-Type': 'application/json'});
+    res.write(JSON.stringify(rumors, 0, 4));
+    res.end();
+  });
+});
+
+app.post('/message/new/:nodeID', function(req, res) {
+  var nodeID = req.params.nodeID;
+  var messageText = req.body.text;
+  Rumor.aggregate([{'$match': {'nodeID': nodeID, 'friendID': nodeID}},
+    {'$group': {'_id': "$messageID", 'orderID': {'$max': '$orderID'}}}]).exec(function(err, message){
+      if(message != undefined && message.length > 0) {
+        console.log("SAVING MESSAGE: " + message[0]._id + ":" + (message[0].orderID + 1));
+        var messageToSave = new Rumor({
+            nodeID: nodeID,
+            messageID: message[0]._id,
+            friendID: nodeID,
+            text: messageText,
+            orderID: message[0].orderID + 1
+        });
+        console.log(JSON.stringify(messageToSave, 0, 4));
+        messageToSave.save(function(err, result) {
+          if(err) {
+            console.log('Failed to save new message: ' + err.message);
+          }
+        });
+      } else {
+        Peer.findOne({nodeID: nodeID}, function(err, peer) {
+          var messageToSave = new Rumor({
+            nodeID: nodeID,
+            messageID: peer.uuID,
+            friendID: nodeID,
+            text: messageText,
+            orderID: 0
+          });
+          console.log(JSON.stringify(messageToSave, 0, 4));
+          messageToSave.save(function(err, result) {
+            if(err) {
+              console.log('Failed to save new message: ' + err.message);
+            }
+          });
+        });
+      }
+  });
+});
+
+app.get('/rumors/all/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var orderType = req.query.orderType;
+  if(orderType == undefined || orderType == null) {
+    Rumor.find({nodeID: nodeID, friendID: {$ne: nodeID}}).sort('messageID -orderID').exec(function(err, rumors){
+      res.writeHead(200, { 'Content-Type': 'application/json'});
+      res.write(JSON.stringify(rumors, 0, 4));
+      res.end();
+    });  
+  } else {
+    Rumor.find({nodeID: nodeID, friendID: {$ne: nodeID}}).sort('messageID orderID').exec(function(err, rumors){
+      res.writeHead(200, { 'Content-Type': 'application/json'});
+      res.write(JSON.stringify(rumors, 0, 4));
+      res.end();
+    });
+  }
+  
+});
+
+app.get('/rumors/rest/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var messageID = req.query.messageID;
+  var orderID = req.query.orderID;
+  Rumor.find({nodeID: nodeID, messageID: messageID, orderID: {$gt: orderID}}).sort('-orderID').exec(function(err, rumors){
+    res.writeHead(200, { 'Content-Type': 'application/json'});
+    res.write(JSON.stringify(rumors, 0, 4));
+    res.end();
+  });
+});
+
+app.get('/rumors/ids/:nodeID', function(req, res){
+  var nodeID = req.params.nodeID;
+  var friendID = req.query.friendID;
+  var ids = new Array(nodeID, friendID);
+  Rumor.aggregate([{'$match': {'nodeID': nodeID, 'friendID': {'$nin': ids}}},{'$group': {'_id': '$messageID', 'orderID': {'$max': '$orderID'}}}]).exec(function(err, rumors){
+    console.log(rumors);
+    res.writeHead(200, { 'Content-Type': 'application/json'});
+    res.write(JSON.stringify(rumors, 0, 4));
+    res.end();
+    /*if(err) {
+      console.log('Sent Message update failed: ' +  err.message);
+      res.status(500).send("Internal Server Error");
+    } else {
+      res.status(200).send("success");
+    }*/
+  });
+});
+
+app.get('/testdata', function(req, res){
+  var rumor = new Rumor({
+    nodeID: 'brady',
+    friendID: 'brady',
+    messageID: "e01f0fd0-c538-11e4-9782-4fbf867baba7",
+    text: 'My first rumor',
+    orderID: 1
+  });
+  rumor.save();
+  var rumor2 = new Rumor({
+    nodeID: 'joannie',
+    friendID: 'joannie',
+    messageID: '37fcae90-c536-11e4-8a91-7f41bf2839f9',
+    text: 'joannies first rumor',
+    orderID: 1
+  });
+  rumor2.save();
+  var rumor3 = new Rumor({
+    nodeID: 'joannie',
+    friendID: 'joannie',
+    messageID: '37fcae90-c536-11e4-8a91-7f41bf2839f9',
+    text: 'joannies second rumor',
+    orderID: 2
+  });
+  rumor3.save();
+  var rumor4 = new Rumor({
+    nodeID: 'brady',
+    friendID: 'joannie',
+    messageID: '37fcae90-c536-11e4-8a91-7f41bf2839f9',
+    text: 'joannies first rumor',
+    orderID: 1
+  });
+  rumor4.save();
+  var sentMessage = new SentMessage({
+    nodeID: 'joannie',
+    friendID: 'brady',
+    messageID: '37fcae90-c536-11e4-8a91-7f41bf2839f9',
+    lastOrderID: 1
+  });
+  sentMessage.save();
+  var relation1 = new Relation({
+    nodeID: 'brady',
+    friendID: 'joannie'
+  });
+  relation1.save();
+  var relation2 = new Relation({
+    nodeID: 'joannie',
+    friendID: 'brady'
+  });
+  relation2.save();
+});
+
+
 
 app.listen(3000, function () {
   console.log('Server listening on', 3000);
 });
 
-function ensureAuthenticated(req, res, next) {
+/*function ensureAuthenticated(req, res, next) {
   if (req.isAuthenticated()) { return next(); }
   res.redirect('/home')
+}*/
+
+function startNodeProcess(nodeID, uuID) {
+  console.log("Starting new node: " + nodeID + "-" + uuID);
+  global.processes[nodeID] = require('child_process').spawn('python', ['script.py', nodeID, uuID]);
+
+  global.processes[nodeID].on('close', function(code) {
+    console.log('closing code: ' + nodeID);
+    delete global.processes[nodeID];
+  });
+}
+
+function saveRumor(req, res, nodeID) {
+  /*{"Rumor" : 
+      {"MessageID": "ABCD-1234-ABCD-1234-ABCD-1234:5" ,
+                  "Originator": "Phil",
+                  "Text": "Hello World!"
+                  },
+      "EndPoint": "https://example.com/gossip/13244"
+    }*/
+  if(global.processes && global.processes[nodeID]) {
+    var rumor = req.body;
+    var uuID = rumor.Rumor.MessageID.split(":");
+    Relation.find({nodeID: nodeID, friendID: rumor.Rumor.Originator}, function(err, result) {
+      if(err) {
+        res.status(500).send("Internal server error");
+        return;
+      }
+      if(!result || result.length == 0) {
+        var newRelation = new Relation({
+          nodeID: nodeID,
+          friendID: rumor.Rumor.Originator
+        });
+        newRelation.save();
+      }
+    });
+    Peer.find({nodeID: rumor.Rumor.Originator}, function(err, result){
+      if(!result.length) {
+        var newPeer = new Peer({
+          nodeID: rumor.Rumor.Originator,
+          uuID: uuID[0],
+          url: rumor.EndPoint
+        });
+        newPeer.save(function(err, result) {
+          console.log("saved foreign peer");
+          if(err) {
+            res.status(500).send("Internal server error");
+            return;
+          }
+        });
+      }
+    });
+    var newRumor = {
+      nodeID: nodeID,
+      messageID: uuID[0],
+      friendID: rumor.Rumor.Originator,
+      text: rumor.Rumor.Text,
+      orderID: uuID[1]
+    }
+    Rumor.update({nodeID: nodeID, messageID: uuID[0], orderID: uuID[1]}, newRumor, {upsert: true}, function(err, result) {
+      console.log("finished insert of rumor for: " + nodeID);
+      if(err) {
+        res.status(500).send("Internal server error");
+      } else {
+        res.status(200).send("Success");
+      }
+    });
+  } else {
+    console.log(nodeID + " is not accepting messages.  Try again later.");
+    res.status(404).send(nodeID + ' is not accepting messages.  Try again later.');
+    res.end();
+  } 
+}
+
+function handleWant(req, res, nodeID) {
+  /*{"Want": {"ABCD-1234-ABCD-1234-ABCD-125A": 3,
+              "ABCD-1234-ABCD-1234-ABCD-129B": 5,
+              "ABCD-1234-ABCD-1234-ABCD-123C": 10
+             } ,
+   "EndPoint": "https://example.com/gossip/asff3"
+  }*/
+  var want = req.body;
+  console.log(JSON.stringify(want));
+  Peer.findOne({url: want.EndPoint}, function(err, result) {
+    if(result) {
+      res.status(200).send('Peer found, processing wants');
+      for(var messageID in want.Want) {
+        Rumor.find({nodeID: nodeID, messageID: messageID, 
+          orderID: {$gt: want.Want[messageID]}}, function(err, result){
+            if(err) {
+              console.log("Error getting wanted rumors");
+            } else {
+              console.log("Found wanted messages: " + JSON.stringify(result));
+              result.forEach(function(rumor, index){
+                var messageJson = {
+                  Rumor: {
+                    MessageID: rumor.messageID + ":" + rumor.orderID,
+                    Originator: rumor.friendID,
+                    Text: rumor.text
+                  },
+                  EndPoint: 'http://' + SERVER_IP + ":3000/gossip/" + nodeID
+                };
+                // Set the headers
+                var headers = {'Content-Type': 'application/json'};
+                peerURL = url_parser.parse(want.EndPoint);
+
+                // Configure the request
+                var options = {
+                    host: peerURL.hostname,
+                    port: peerURL.port,
+                    path: peerURL.path,
+                    method: 'POST',
+                    headers: headers
+                }
+
+                // Start the request
+                console.log("posting wanted message to: " + want.EndPoint);
+                post_req = http.request(options, function (error, response, body) {
+                    if (!error && response.statusCode == 200) {
+                      // Print out the response body
+                      console.log("successfully sent rumor")
+                    } else {
+                      console.log("failed to send rumor");
+                      console.log(JSON.stringify(error.message));
+                    }
+                });
+                post_req.write(JSON.stringify(messageJson));
+                post_req.end();
+              });
+            }
+          });
+      }
+    } else {
+      console.log("Can't find peer to request want");
+      res.status(200).send("No new rumors found.");
+    }
+  });
+  
 }
 
 

@@ -1,7 +1,9 @@
 var db = require("../db");
 var Rumor = db.model('Rumor', {
-	MessageID: String,
-	Originator: String,
-	Text: String
+	nodeID: String,
+	messageID: String,
+	friendID: String,
+	text: String,
+	orderID: Number
 })
 module.exports = Rumor;
